@@ -1,0 +1,86 @@
+Estoy construyendo un modelo de cartera vencida (mora) en Banco Pichincha. Tengo árboles de decisión (sklearn DecisionTreeClassifier, max_depth=4) entrenados sobre variables transformadas a WOE (Weight of Evidence), separados por segmento: CE (Con Experiencia) y SE (Sin Experiencia).
+
+PASO 1 — Tabla de grupos
+
+Toma el resultado de `tree.export_text(model, feature_names=list(X_train.columns), decimals=4)` que te voy a pegar abajo, y constrúyeme la tabla final de grupos (hojas del árbol): cada hoja = un grupo de clientes, con el rango real de cada variable (no el WOE), el % de muestra, la probabilidad de malo (P(Malo)) y la clase.
+
+MÉTODO para traducir cada corte del árbol (que está en escala WOE) a rango real de la variable:
+Cada valor WOE en las tablas de abajo es una constante por bin. El árbol, al entrenar sobre la variable *_woe, elige como umbral de corte un punto que cae exactamente en el punto medio entre dos valores WOE consecutivos de la tabla (por ejemplo, si el árbol dice "scoreBuro_woe <= 0.130" y en la tabla hay un bin con WOE=-0.069 y el siguiente con WOE=0.3419, el corte 0.130 es el punto medio entre esos dos, así que "<= 0.130" equivale a "WOE = -0.069 o menor" = todos los bins de scoreBuro por debajo de ese bin). Así, para cada nodo del árbol:
+1. Ubica el corte (ej. "avgSaldoCuentasU3M_woe <= 0.028") entre qué dos valores WOE consecutivos de la tabla cae.
+2. Eso te dice qué bin(s) del rango real quedan a cada lado (True/False) de la rama.
+3. Recorre cada camino raíz→hoja, traduciendo cada corte, hasta armar el rango real acumulado de cada variable para esa hoja.
+4. Con eso arma la tabla final (formato abajo).
+
+Tablas WOE (usa la que corresponda según el segmento y variable del árbol que te paso):
+
+scoreBuro_woe — CE:
+<800 o missing → -1.3359 | [800,894) → -0.6230 | [894,920) → -0.3504 | [920,960) → -0.069 | [960,971) → 0.3419 | [971,979) → 0.54579 | ≥979 → 1.1462
+
+scoreBuro_woe — SE:
+<800 o missing → -0.3607 | [800,869) → -0.4028 | [869,873) → -0.22657 | [873,920) → -0.1344 | [920,940) → 0.06496 | [940,960) → 0.4246 | [960,972) → 0.532 | ≥972 → 1.20337
+
+avgSaldoCuentasU3M_woe — CE:
+≤39.01 → -0.5492 | (39.01,132.92] → -0.2448 | (132.92,424.92] → 0.0361 | (424.92,792.97] → 0.2556 | >792.97 → 0.4275 | Missing → 0.0203
+
+avgSaldoCuentasU6M_woe — CE:
+≤67.44 → -0.4425 | (67.44,275.64] → -0.1247 | (275.64,495.00] → 0.0353 | (495.00,1119.13] → 0.2291 | >1119.13 → 0.3180 | Missing → 0.0203
+
+avgSaldoCuentasU3M_woe — SE:
+≤37.69 → -0.7477 | (37.69,153.48] → -0.1541 | (153.48,287.13] → 0.1631 | (287.13,657.85] → 0.3047 | >657.85 → 0.6672 | Missing → -0.9295
+
+avgSaldoCuentasU6M_woe — SE:
+≤53.10 → -0.7385 | (53.10,166.43] → -0.1050 | (166.43,302.54] → 0.0895 | (302.54,865.21] → 0.3714 | >865.21 → 0.6334 | Missing → -0.9295
+
+El árbol es para el segmento: [CE o SE] con la variable: [avgSaldoCuentasU3M_woe o avgSaldoCuentasU6M_woe]
+
+FORMATO DE TABLA ESPERADO:
+
+| Grupo | Rango scoreBuro | Rango avgSaldoCuentas[U3M/U6M] | % Muestra | P(Malo) | Clase |
+|-------|------------------|----------------------------------|-----------|---------|-------|
+| G1    | ej: < 800 o missing | ej: ≤ 39.01                  | 8.4%      | 0.707   | Malo  |
+
+Reglas:
+- Un grupo (fila) por cada hoja del árbol.
+- El % Muestra de todas las filas debe sumar 100% (o muy cerca) — verifica y avísame si no cuadra.
+- P(Malo) es el segundo valor de "value = [P(Bueno), P(Malo)]" de cada hoja.
+- Ordena de menor a mayor P(Malo).
+
+PASO 2 — Visualización tipo cuadrícula (artifact HTML)
+
+Con la tabla del Paso 1, arma un artifact HTML (self-contained, un solo archivo) con una cuadrícula de riesgo, igual estilo a este ejemplo:
+- Título corto + 1-2 líneas de descripción de qué corta el árbol.
+- Una tabla/grid donde las FILAS son cada bin real de avgSaldoCuentas[U3M/U6M] (de menor a mayor, de abajo hacia arriba) y las COLUMNAS son cada bin real de scoreBuro (de menor a mayor, izquierda a derecha).
+- Cada celda de la cuadrícula = el Grupo (G1, G2, ...) al que pertenece esa combinación de bins según el árbol (una combinación de bins puede no formar su propio grupo si el árbol no llegó a separarla — en ese caso usa el mismo Grupo que la hoja que sí la contiene, según el camino raíz→hoja).
+- Colorea cada celda según P(Malo) de su grupo: rojo oscuro = más riesgo (P(Malo) alto), azul oscuro = menos riesgo (P(Malo) bajo), con un gradiente intermedio.
+- Debajo de la cuadrícula, una tarjeta por grupo con: número de grupo, descripción de sus rangos ("Saldo X–Y y Score A–B"), % de malo, % de muestra.
+
+Publica el artifact para que pueda verlo.
+
+Aquí el export_text:
+
+[PEGA AQUÍ EL TEXTO DE tree.export_text(...)]
+
+
+
+
+
+
+PASO 2 — Visualización tipo cuadrícula (archivo Excel)
+
+Con la tabla del Paso 1, arma un archivo Excel (.xlsx) real (no solo texto) con esta estructura:
+
+HOJA "Cuadrícula":
+- Una cuadrícula donde las FILAS son cada bin real de avgSaldoCuentas[U3M/U6M] (de menor a mayor, de arriba hacia abajo) y las COLUMNAS son cada bin real de scoreBuro (de menor a mayor, izquierda a derecha).
+- Encabezado de cada fila/columna = el rango del bin (ej. "800–893", "63–200").
+- Cada celda de la cuadrícula = el número de Grupo (G1, G2, ...) al que pertenece esa combinación de bins según el árbol (si una combinación de bins no forma su propio grupo porque el árbol no la separó, usa el mismo Grupo que la hoja que sí la contiene, según el camino raíz→hoja).
+- Aplica formato condicional de escala de color a toda la cuadrícula, basado en el P(Malo) del grupo de cada celda: rojo oscuro = P(Malo) alto (más riesgo), azul oscuro = P(Malo) bajo (menos riesgo), con gradiente intermedio. Si tu herramienta no puede vincular el color al P(Malo) real, aproxima usando el número de grupo ordenado de menor a mayor P(Malo).
+- Pon un título arriba con 1-2 líneas describiendo qué corta el árbol.
+
+HOJA "Grupos":
+- Una tabla con una fila por grupo: Grupo | Rango scoreBuro | Rango avgSaldoCuentas[U3M/U6M] | % Muestra | P(Malo) | Clase (la misma tabla del Paso 1, ordenada de menor a mayor P(Malo)).
+
+Si por alguna razón no puedes generar un .xlsx real, como alternativa genera una imagen (PNG) de la misma cuadrícula coloreada, con la tabla de grupos debajo o al lado.
+
+Aquí el export_text:
+
+[PEGA AQUÍ EL TEXTO DE tree.export_text(...)]
