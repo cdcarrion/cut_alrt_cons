@@ -1,298 +1,201 @@
-    def asignar_perfil_avgSaldoU3M(
+    def asignar_perfil_generico(
         df,
         col_tipo_modelo,
         col_score,
-        col_saldo_promedio,
-        col_perfiles
+        col_saldo,
+        col_perfiles,
+        reglas_ce,
+        reglas_se
     ):
         """
-        Asigna el perfil de acuerdo al tipo de modelo (CE / SE),
-        score y saldo PROMEDIO de cuentas de los ultimos 3 meses (U3M).
-        C_1 = mayor riesgo (P(Malo) mas alto) ... C_N = menor riesgo.
+        Version generica de asignar_perfil: en vez de tener los cortes
+        escritos adentro del F.when(), los recibe como parametro (reglas_ce /
+        reglas_se), asi UNA sola funcion sirve para saldoCuentas, U3M o U6M
+        -- solo cambia la tabla de reglas que le pasas.
+
+        Cada regla es una tupla:
+            (score_min, score_max, saldo_min, saldo_max, incluye_missing, etiqueta)
+        None = sin limite en ese lado. incluye_missing=True agrega
+        "o el saldo es nulo" a esa regla.
+
+        Por defecto cada limite es score/saldo >= min y < max (igual que en
+        los arboles). Si necesitas el operador exacto contrario (> en vez de
+        >=, o <= en vez de <, como pasaba en 2 reglas del saldoCuentas
+        original), pasa ese limite como tupla (valor, inclusive):
+            (552, False)  ->  saldo > 552   (estricto, no incluye el 552)
+            (7.26, True)  ->  saldo <= 7.26 (incluye el 7.26)
         """
 
-        # Identifica tipo CE
+        def limite(campo, valor, es_max, incl_por_defecto):
+            if valor is None:
+                return F.lit(True)
+            if isinstance(valor, tuple):
+                v, incl = valor
+            else:
+                v, incl = valor, incl_por_defecto
+            if es_max:
+                return (F.col(campo) <= v) if incl else (F.col(campo) < v)
+            else:
+                return (F.col(campo) >= v) if incl else (F.col(campo) > v)
+
+        def construir_condicion(regla):
+            score_min, score_max, saldo_min, saldo_max, incluye_missing, etiqueta = regla
+
+            cond = limite(col_score, score_min, es_max=False, incl_por_defecto=True)
+            cond = cond & limite(col_score, score_max, es_max=True, incl_por_defecto=False)
+
+            cond_saldo = limite(col_saldo, saldo_min, es_max=False, incl_por_defecto=True)
+            cond_saldo = cond_saldo & limite(col_saldo, saldo_max, es_max=True, incl_por_defecto=False)
+            if incluye_missing:
+                cond_saldo = cond_saldo | F.col(col_saldo).isNull()
+
+            return cond & cond_saldo, etiqueta
+
+        def construir_chain(reglas):
+            chain = None
+            for regla in reglas:
+                cond, etiqueta = construir_condicion(regla)
+                chain = F.when(cond, etiqueta) if chain is None else chain.when(cond, etiqueta)
+            return chain.otherwise("Sin Perfil")
+
         tipo_ce = F.col(col_tipo_modelo).endswith("CE")
 
-        perfiles_expr = (
-            F.when(
-                tipo_ce,
-                # ---------------- CE (11 grupos) ----------------
-                F.when(
-                    (F.col(col_score) < 920) &
-                    (((F.col(col_saldo_promedio) < 132.92)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_1"
-                ).when(
-                    (F.col(col_score) >= 920) &
-                    (F.col(col_score) < 960) &
-                    (F.col(col_saldo_promedio) < 39.01),
-                    "C_2"
-                ).when(
-                    (F.col(col_score) < 894) &
-                    (F.col(col_saldo_promedio) >= 132.92),
-                    "C_3"
-                ).when(
-                    (F.col(col_score) >= 920) &
-                    (F.col(col_score) < 960) &
-                    (((F.col(col_saldo_promedio) >= 39.01) &
-                    (F.col(col_saldo_promedio) < 132.92)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_4"
-                ).when(
-                    (F.col(col_score) >= 894) &
-                    (F.col(col_score) < 960) &
-                    (F.col(col_saldo_promedio) >= 132.92) &
-                    (F.col(col_saldo_promedio) < 424.92),
-                    "C_5"
-                ).when(
-                    (F.col(col_score) >= 960) &
-                    (F.col(col_score) < 979) &
-                    (F.col(col_saldo_promedio) < 132.92),
-                    "C_6"
-                ).when(
-                    (F.col(col_score) >= 894) &
-                    (F.col(col_score) < 960) &
-                    (F.col(col_saldo_promedio) >= 424.92),
-                    "C_7"
-                ).when(
-                    (F.col(col_score) >= 960) &
-                    (F.col(col_score) < 971) &
-                    (((F.col(col_saldo_promedio) >= 132.92)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_8"
-                ).when(
-                    (F.col(col_score) >= 971) &
-                    (F.col(col_score) < 979) &
-                    (((F.col(col_saldo_promedio) >= 132.92)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_9"
-                ).when(
-                    (F.col(col_score) >= 979) &
-                    (((F.col(col_saldo_promedio) < 424.92)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_10"
-                ).when(
-                    (F.col(col_score) >= 979) &
-                    (F.col(col_saldo_promedio) >= 424.92),
-                    "C_11"
-                ).otherwise("Sin Perfil")
-            ).otherwise(
-                # ---------------- SE (12 grupos) ----------------
-                F.when(
-                    (F.col(col_score) < 940) &
-                    (((F.col(col_saldo_promedio) < 37.69)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_1"
-                ).when(
-                    (F.col(col_score) < 873) &
-                    (F.col(col_saldo_promedio) >= 37.69) &
-                    (F.col(col_saldo_promedio) < 153.48),
-                    "C_2"
-                ).when(
-                    (F.col(col_score) >= 873) &
-                    (F.col(col_score) < 940) &
-                    (F.col(col_saldo_promedio) >= 37.69) &
-                    (F.col(col_saldo_promedio) < 153.48),
-                    "C_3"
-                ).when(
-                    (F.col(col_score) >= 940) &
-                    (((F.col(col_saldo_promedio) < 37.69)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_4"
-                ).when(
-                    (F.col(col_score) < 873) &
-                    (F.col(col_saldo_promedio) >= 153.48) &
-                    (F.col(col_saldo_promedio) < 657.85),
-                    "C_5"
-                ).when(
-                    (F.col(col_score) >= 873) &
-                    (F.col(col_score) < 940) &
-                    (F.col(col_saldo_promedio) >= 153.48) &
-                    (F.col(col_saldo_promedio) < 657.85),
-                    "C_6"
-                ).when(
-                    (F.col(col_score) < 869) &
-                    (F.col(col_saldo_promedio) >= 657.85),
-                    "C_7"
-                ).when(
-                    (F.col(col_score) >= 869) &
-                    (F.col(col_score) < 940) &
-                    (F.col(col_saldo_promedio) >= 657.85),
-                    "C_8"
-                ).when(
-                    (F.col(col_score) >= 940) &
-                    (F.col(col_saldo_promedio) >= 37.69) &
-                    (F.col(col_saldo_promedio) < 153.48),
-                    "C_9"
-                ).when(
-                    (F.col(col_score) >= 940) &
-                    (F.col(col_score) < 972) &
-                    (F.col(col_saldo_promedio) >= 153.48) &
-                    (F.col(col_saldo_promedio) < 657.85),
-                    "C_10"
-                ).when(
-                    (F.col(col_score) >= 940) &
-                    (F.col(col_score) < 972) &
-                    (F.col(col_saldo_promedio) >= 657.85),
-                    "C_11"
-                ).when(
-                    (F.col(col_score) >= 972) &
-                    (F.col(col_saldo_promedio) >= 153.48),
-                    "C_12"
-                ).otherwise("Sin Perfil")
-            )
+        perfiles_expr = F.when(
+            tipo_ce, construir_chain(reglas_ce)
+        ).otherwise(
+            construir_chain(reglas_se)
         )
 
         return df.withColumn(col_perfiles, perfiles_expr)
 
+    # score_min, score_max, saldo_min, saldo_max, incluye_missing, etiqueta
+    # C_1 = mayor riesgo ... C_N = menor riesgo
 
-    def asignar_perfil_avgSaldoU6M(
+    # ---- saldoCuentas (a la fecha de corte) ----
+    REGLAS_FA_CE = [
+        (979, None, 63, None, False, "C_11"),
+        (960, 979, 552, None, False, "C_10"),
+        (960, 979, 63, 552, False, "C_9"),
+        (960, None, 7.26, 63, False, "C_8"),
+        (894, 960, (552, False), None, False, "C_7"),   # saldo > 552 (estricto)
+        (960, None, None, (7.26, True), False, "C_6"),  # saldo <= 7.26 (inclusive)
+        (894, 960, 63, (552, True), False, "C_5"),       # saldo <= 552 (inclusive -- CORREGIDO, cierra el hueco)
+        (920, 960, 7.26, 63, False, "C_4"),
+        (None, 894, 63, None, False, "C_3"),
+        (920, 960, None, 7.26, False, "C_2"),
+        (None, 920, None, 63, False, "C_1"),
+    ]
+
+    REGLAS_FA_SE = [
+        (972, None, 92, None, False, "C_12"),
+        (940, 972, 469, None, False, "C_11"),
+        (940, 972, 92, 469, False, "C_10"),
+        (None, 940, 1028, None, False, "C_9"),
+        (940, None, 6.14, 92, False, "C_8"),
+        (None, 940, 469, 1028, False, "C_7"),
+        (869, 940, 92, 469, False, "C_6"),
+        (940, None, None, 6.14, False, "C_5"),
+        (None, 869, 92, 469, False, "C_4"),
+        (873, 940, 6.14, 92, False, "C_3"),
+        (None, 873, 6.14, 92, False, "C_2"),
+        (None, 940, None, 6.14, False, "C_1"),   # score < 940 (CORREGIDO, era 920 -- cierra el hueco)
+    ]
+
+    # ---- avgSaldoCuentasU3M ----
+    REGLAS_U3M_CE = [
+        (None, 920, None, 132.92, True, "C_1"),
+        (920, 960, None, 39.01, False, "C_2"),
+        (None, 894, 132.92, None, False, "C_3"),
+        (920, 960, 39.01, 132.92, True, "C_4"),
+        (894, 960, 132.92, 424.92, False, "C_5"),
+        (960, 979, None, 132.92, False, "C_6"),
+        (894, 960, 424.92, None, False, "C_7"),
+        (960, 971, 132.92, None, True, "C_8"),
+        (971, 979, 132.92, None, True, "C_9"),
+        (979, None, None, 424.92, True, "C_10"),
+        (979, None, 424.92, None, False, "C_11"),
+    ]
+
+    REGLAS_U3M_SE = [
+        (None, 940, None, 37.69, True, "C_1"),
+        (None, 873, 37.69, 153.48, False, "C_2"),
+        (873, 940, 37.69, 153.48, False, "C_3"),
+        (940, None, None, 37.69, True, "C_4"),
+        (None, 873, 153.48, 657.85, False, "C_5"),
+        (873, 940, 153.48, 657.85, False, "C_6"),
+        (None, 869, 657.85, None, False, "C_7"),
+        (869, 940, 657.85, None, False, "C_8"),
+        (940, None, 37.69, 153.48, False, "C_9"),
+        (940, 972, 153.48, 657.85, False, "C_10"),
+        (940, 972, 657.85, None, False, "C_11"),
+        (972, None, 153.48, None, False, "C_12"),
+    ]
+
+    # ---- avgSaldoCuentasU6M ----
+    REGLAS_U6M_CE = [
+        (None, 894, None, 275.64, False, "C_1"),
+        (None, 894, 275.64, None, True, "C_2"),
+        (894, 960, None, 67.44, False, "C_3"),
+        (894, 960, 67.44, 495, True, "C_4"),
+        (894, 960, 495, 1119.13, False, "C_5"),
+        (894, 960, 1119.13, None, False, "C_6"),
+        (960, 979, None, 275.64, False, "C_7"),
+        (960, 971, 275.64, None, True, "C_8"),
+        (971, 979, 275.64, None, True, "C_9"),
+        (979, None, None, 495, True, "C_10"),
+        (979, None, 495, None, False, "C_11"),
+    ]
+
+    REGLAS_U6M_SE = [
+        (None, 940, None, 53.1, True, "C_1"),
+        (None, 873, 53.1, 302.54, False, "C_2"),
+        (940, None, None, 53.1, True, "C_3"),
+        (873, 940, 53.1, 302.54, False, "C_4"),
+        (None, 920, 302.54, None, False, "C_5"),
+        (940, 972, 53.1, 302.54, False, "C_6"),
+        (920, 940, 302.54, None, False, "C_7"),
+        (940, 972, 302.54, None, False, "C_8"),
+        (972, None, 53.1, None, False, "C_9"),
+    ]
+
+    dfFA = asignar_perfil_generico(
         df,
-        col_tipo_modelo,
-        col_score,
-        col_saldo_promedio,
-        col_perfiles
-    ):
-        """
-        Asigna el perfil de acuerdo al tipo de modelo (CE / SE),
-        score y saldo PROMEDIO de cuentas de los ultimos 6 meses (U6M).
-        C_1 = mayor riesgo (P(Malo) mas alto) ... C_N = menor riesgo.
-        """
+        col_tipo_modelo = 'tipoModeloFA',
+        col_score = 'scoreBuroFA',
+        col_saldo = 'saldoCuentasFA',
+        col_perfiles = 'perfilesReglasFA',
+        reglas_ce = REGLAS_FA_CE,
+        reglas_se = REGLAS_FA_SE
+    )
 
-        # Identifica tipo CE
-        tipo_ce = F.col(col_tipo_modelo).endswith("CE")
+    df12D = asignar_perfil_generico(
+        dfFA,
+        col_tipo_modelo = 'tipoModelo12D',
+        col_score = 'scoreBuro12D',
+        col_saldo = 'saldoCuentas12D',
+        col_perfiles = 'perfilesReglas12D',
+        reglas_ce = REGLAS_FA_CE,
+        reglas_se = REGLAS_FA_SE
+    )
 
-        perfiles_expr = (
-            F.when(
-                tipo_ce,
-                # ---------------- CE (11 grupos) ----------------
-                F.when(
-                    (F.col(col_score) < 894) &
-                    (F.col(col_saldo_promedio) < 275.64),
-                    "C_1"
-                ).when(
-                    (F.col(col_score) < 894) &
-                    (((F.col(col_saldo_promedio) >= 275.64)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_2"
-                ).when(
-                    (F.col(col_score) >= 894) &
-                    (F.col(col_score) < 960) &
-                    (F.col(col_saldo_promedio) < 67.44),
-                    "C_3"
-                ).when(
-                    (F.col(col_score) >= 894) &
-                    (F.col(col_score) < 960) &
-                    (((F.col(col_saldo_promedio) >= 67.44) &
-                    (F.col(col_saldo_promedio) < 495)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_4"
-                ).when(
-                    (F.col(col_score) >= 894) &
-                    (F.col(col_score) < 960) &
-                    (F.col(col_saldo_promedio) >= 495) &
-                    (F.col(col_saldo_promedio) < 1119.13),
-                    "C_5"
-                ).when(
-                    (F.col(col_score) >= 894) &
-                    (F.col(col_score) < 960) &
-                    (F.col(col_saldo_promedio) >= 1119.13),
-                    "C_6"
-                ).when(
-                    (F.col(col_score) >= 960) &
-                    (F.col(col_score) < 979) &
-                    (F.col(col_saldo_promedio) < 275.64),
-                    "C_7"
-                ).when(
-                    (F.col(col_score) >= 960) &
-                    (F.col(col_score) < 971) &
-                    (((F.col(col_saldo_promedio) >= 275.64)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_8"
-                ).when(
-                    (F.col(col_score) >= 971) &
-                    (F.col(col_score) < 979) &
-                    (((F.col(col_saldo_promedio) >= 275.64)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_9"
-                ).when(
-                    (F.col(col_score) >= 979) &
-                    (((F.col(col_saldo_promedio) < 495)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_10"
-                ).when(
-                    (F.col(col_score) >= 979) &
-                    (F.col(col_saldo_promedio) >= 495),
-                    "C_11"
-                ).otherwise("Sin Perfil")
-            ).otherwise(
-                # ---------------- SE (9 grupos) ----------------
-                F.when(
-                    (F.col(col_score) < 940) &
-                    (((F.col(col_saldo_promedio) < 53.1)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_1"
-                ).when(
-                    (F.col(col_score) < 873) &
-                    (F.col(col_saldo_promedio) >= 53.1) &
-                    (F.col(col_saldo_promedio) < 302.54),
-                    "C_2"
-                ).when(
-                    (F.col(col_score) >= 940) &
-                    (((F.col(col_saldo_promedio) < 53.1)) |
-                    (F.col(col_saldo_promedio).isNull())),
-                    "C_3"
-                ).when(
-                    (F.col(col_score) >= 873) &
-                    (F.col(col_score) < 940) &
-                    (F.col(col_saldo_promedio) >= 53.1) &
-                    (F.col(col_saldo_promedio) < 302.54),
-                    "C_4"
-                ).when(
-                    (F.col(col_score) < 920) &
-                    (F.col(col_saldo_promedio) >= 302.54),
-                    "C_5"
-                ).when(
-                    (F.col(col_score) >= 940) &
-                    (F.col(col_score) < 972) &
-                    (F.col(col_saldo_promedio) >= 53.1) &
-                    (F.col(col_saldo_promedio) < 302.54),
-                    "C_6"
-                ).when(
-                    (F.col(col_score) >= 920) &
-                    (F.col(col_score) < 940) &
-                    (F.col(col_saldo_promedio) >= 302.54),
-                    "C_7"
-                ).when(
-                    (F.col(col_score) >= 940) &
-                    (F.col(col_score) < 972) &
-                    (F.col(col_saldo_promedio) >= 302.54),
-                    "C_8"
-                ).when(
-                    (F.col(col_score) >= 972) &
-                    (F.col(col_saldo_promedio) >= 53.1),
-                    "C_9"
-                ).otherwise("Sin Perfil")
-            )
-        )
-
-        return df.withColumn(col_perfiles, perfiles_expr)
-
-    dfU3M = asignar_perfil_avgSaldoU3M(
+    dfU3M = asignar_perfil_generico(
         df12D,
         col_tipo_modelo = 'tipoModeloFA',
         col_score = 'scoreBuroFA',
-        col_saldo_promedio = 'avgSaldoCuentasU3M',
-        col_perfiles = 'perfilesReglasU3M'
+        col_saldo = 'avgSaldoCuentasU3M',
+        col_perfiles = 'perfilesReglasU3M',
+        reglas_ce = REGLAS_U3M_CE,
+        reglas_se = REGLAS_U3M_SE
     )
 
-    dfU6M = asignar_perfil_avgSaldoU6M(
+    dfU6M = asignar_perfil_generico(
         dfU3M,
         col_tipo_modelo = 'tipoModeloFA',
         col_score = 'scoreBuroFA',
-        col_saldo_promedio = 'avgSaldoCuentasU6M',
-        col_perfiles = 'perfilesReglasU6M'
+        col_saldo = 'avgSaldoCuentasU6M',
+        col_perfiles = 'perfilesReglasU6M',
+        reglas_ce = REGLAS_U6M_CE,
+        reglas_se = REGLAS_U6M_SE
     )
 
     return dfU6M
