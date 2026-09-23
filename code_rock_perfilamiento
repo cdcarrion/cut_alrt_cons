@@ -193,7 +193,7 @@ def pyspark_transform(spark, df, param_dict):
     )
 
     dfU6M = asignar_perfil_generico(
-        dfU3M,
+        dfU3M, 
         col_tipo_modelo = 'tipoModeloFA',
         col_score = 'scoreBuroFA',
         col_saldo = 'avgSaldoCuentasU6M',
