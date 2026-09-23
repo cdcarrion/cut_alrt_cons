@@ -1,0 +1,298 @@
+    def asignar_perfil_avgSaldoU3M(
+        df,
+        col_tipo_modelo,
+        col_score,
+        col_saldo_promedio,
+        col_perfiles
+    ):
+        """
+        Asigna el perfil de acuerdo al tipo de modelo (CE / SE),
+        score y saldo PROMEDIO de cuentas de los ultimos 3 meses (U3M).
+        C_1 = mayor riesgo (P(Malo) mas alto) ... C_N = menor riesgo.
+        """
+
+        # Identifica tipo CE
+        tipo_ce = F.col(col_tipo_modelo).endswith("CE")
+
+        perfiles_expr = (
+            F.when(
+                tipo_ce,
+                # ---------------- CE (11 grupos) ----------------
+                F.when(
+                    (F.col(col_score) < 920) &
+                    (((F.col(col_saldo_promedio) < 132.92)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_1"
+                ).when(
+                    (F.col(col_score) >= 920) &
+                    (F.col(col_score) < 960) &
+                    (F.col(col_saldo_promedio) < 39.01),
+                    "C_2"
+                ).when(
+                    (F.col(col_score) < 894) &
+                    (F.col(col_saldo_promedio) >= 132.92),
+                    "C_3"
+                ).when(
+                    (F.col(col_score) >= 920) &
+                    (F.col(col_score) < 960) &
+                    (((F.col(col_saldo_promedio) >= 39.01) &
+                    (F.col(col_saldo_promedio) < 132.92)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_4"
+                ).when(
+                    (F.col(col_score) >= 894) &
+                    (F.col(col_score) < 960) &
+                    (F.col(col_saldo_promedio) >= 132.92) &
+                    (F.col(col_saldo_promedio) < 424.92),
+                    "C_5"
+                ).when(
+                    (F.col(col_score) >= 960) &
+                    (F.col(col_score) < 979) &
+                    (F.col(col_saldo_promedio) < 132.92),
+                    "C_6"
+                ).when(
+                    (F.col(col_score) >= 894) &
+                    (F.col(col_score) < 960) &
+                    (F.col(col_saldo_promedio) >= 424.92),
+                    "C_7"
+                ).when(
+                    (F.col(col_score) >= 960) &
+                    (F.col(col_score) < 971) &
+                    (((F.col(col_saldo_promedio) >= 132.92)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_8"
+                ).when(
+                    (F.col(col_score) >= 971) &
+                    (F.col(col_score) < 979) &
+                    (((F.col(col_saldo_promedio) >= 132.92)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_9"
+                ).when(
+                    (F.col(col_score) >= 979) &
+                    (((F.col(col_saldo_promedio) < 424.92)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_10"
+                ).when(
+                    (F.col(col_score) >= 979) &
+                    (F.col(col_saldo_promedio) >= 424.92),
+                    "C_11"
+                ).otherwise("Sin Perfil")
+            ).otherwise(
+                # ---------------- SE (12 grupos) ----------------
+                F.when(
+                    (F.col(col_score) < 940) &
+                    (((F.col(col_saldo_promedio) < 37.69)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_1"
+                ).when(
+                    (F.col(col_score) < 873) &
+                    (F.col(col_saldo_promedio) >= 37.69) &
+                    (F.col(col_saldo_promedio) < 153.48),
+                    "C_2"
+                ).when(
+                    (F.col(col_score) >= 873) &
+                    (F.col(col_score) < 940) &
+                    (F.col(col_saldo_promedio) >= 37.69) &
+                    (F.col(col_saldo_promedio) < 153.48),
+                    "C_3"
+                ).when(
+                    (F.col(col_score) >= 940) &
+                    (((F.col(col_saldo_promedio) < 37.69)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_4"
+                ).when(
+                    (F.col(col_score) < 873) &
+                    (F.col(col_saldo_promedio) >= 153.48) &
+                    (F.col(col_saldo_promedio) < 657.85),
+                    "C_5"
+                ).when(
+                    (F.col(col_score) >= 873) &
+                    (F.col(col_score) < 940) &
+                    (F.col(col_saldo_promedio) >= 153.48) &
+                    (F.col(col_saldo_promedio) < 657.85),
+                    "C_6"
+                ).when(
+                    (F.col(col_score) < 869) &
+                    (F.col(col_saldo_promedio) >= 657.85),
+                    "C_7"
+                ).when(
+                    (F.col(col_score) >= 869) &
+                    (F.col(col_score) < 940) &
+                    (F.col(col_saldo_promedio) >= 657.85),
+                    "C_8"
+                ).when(
+                    (F.col(col_score) >= 940) &
+                    (F.col(col_saldo_promedio) >= 37.69) &
+                    (F.col(col_saldo_promedio) < 153.48),
+                    "C_9"
+                ).when(
+                    (F.col(col_score) >= 940) &
+                    (F.col(col_score) < 972) &
+                    (F.col(col_saldo_promedio) >= 153.48) &
+                    (F.col(col_saldo_promedio) < 657.85),
+                    "C_10"
+                ).when(
+                    (F.col(col_score) >= 940) &
+                    (F.col(col_score) < 972) &
+                    (F.col(col_saldo_promedio) >= 657.85),
+                    "C_11"
+                ).when(
+                    (F.col(col_score) >= 972) &
+                    (F.col(col_saldo_promedio) >= 153.48),
+                    "C_12"
+                ).otherwise("Sin Perfil")
+            )
+        )
+
+        return df.withColumn(col_perfiles, perfiles_expr)
+
+
+    def asignar_perfil_avgSaldoU6M(
+        df,
+        col_tipo_modelo,
+        col_score,
+        col_saldo_promedio,
+        col_perfiles
+    ):
+        """
+        Asigna el perfil de acuerdo al tipo de modelo (CE / SE),
+        score y saldo PROMEDIO de cuentas de los ultimos 6 meses (U6M).
+        C_1 = mayor riesgo (P(Malo) mas alto) ... C_N = menor riesgo.
+        """
+
+        # Identifica tipo CE
+        tipo_ce = F.col(col_tipo_modelo).endswith("CE")
+
+        perfiles_expr = (
+            F.when(
+                tipo_ce,
+                # ---------------- CE (11 grupos) ----------------
+                F.when(
+                    (F.col(col_score) < 894) &
+                    (F.col(col_saldo_promedio) < 275.64),
+                    "C_1"
+                ).when(
+                    (F.col(col_score) < 894) &
+                    (((F.col(col_saldo_promedio) >= 275.64)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_2"
+                ).when(
+                    (F.col(col_score) >= 894) &
+                    (F.col(col_score) < 960) &
+                    (F.col(col_saldo_promedio) < 67.44),
+                    "C_3"
+                ).when(
+                    (F.col(col_score) >= 894) &
+                    (F.col(col_score) < 960) &
+                    (((F.col(col_saldo_promedio) >= 67.44) &
+                    (F.col(col_saldo_promedio) < 495)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_4"
+                ).when(
+                    (F.col(col_score) >= 894) &
+                    (F.col(col_score) < 960) &
+                    (F.col(col_saldo_promedio) >= 495) &
+                    (F.col(col_saldo_promedio) < 1119.13),
+                    "C_5"
+                ).when(
+                    (F.col(col_score) >= 894) &
+                    (F.col(col_score) < 960) &
+                    (F.col(col_saldo_promedio) >= 1119.13),
+                    "C_6"
+                ).when(
+                    (F.col(col_score) >= 960) &
+                    (F.col(col_score) < 979) &
+                    (F.col(col_saldo_promedio) < 275.64),
+                    "C_7"
+                ).when(
+                    (F.col(col_score) >= 960) &
+                    (F.col(col_score) < 971) &
+                    (((F.col(col_saldo_promedio) >= 275.64)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_8"
+                ).when(
+                    (F.col(col_score) >= 971) &
+                    (F.col(col_score) < 979) &
+                    (((F.col(col_saldo_promedio) >= 275.64)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_9"
+                ).when(
+                    (F.col(col_score) >= 979) &
+                    (((F.col(col_saldo_promedio) < 495)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_10"
+                ).when(
+                    (F.col(col_score) >= 979) &
+                    (F.col(col_saldo_promedio) >= 495),
+                    "C_11"
+                ).otherwise("Sin Perfil")
+            ).otherwise(
+                # ---------------- SE (9 grupos) ----------------
+                F.when(
+                    (F.col(col_score) < 940) &
+                    (((F.col(col_saldo_promedio) < 53.1)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_1"
+                ).when(
+                    (F.col(col_score) < 873) &
+                    (F.col(col_saldo_promedio) >= 53.1) &
+                    (F.col(col_saldo_promedio) < 302.54),
+                    "C_2"
+                ).when(
+                    (F.col(col_score) >= 940) &
+                    (((F.col(col_saldo_promedio) < 53.1)) |
+                    (F.col(col_saldo_promedio).isNull())),
+                    "C_3"
+                ).when(
+                    (F.col(col_score) >= 873) &
+                    (F.col(col_score) < 940) &
+                    (F.col(col_saldo_promedio) >= 53.1) &
+                    (F.col(col_saldo_promedio) < 302.54),
+                    "C_4"
+                ).when(
+                    (F.col(col_score) < 920) &
+                    (F.col(col_saldo_promedio) >= 302.54),
+                    "C_5"
+                ).when(
+                    (F.col(col_score) >= 940) &
+                    (F.col(col_score) < 972) &
+                    (F.col(col_saldo_promedio) >= 53.1) &
+                    (F.col(col_saldo_promedio) < 302.54),
+                    "C_6"
+                ).when(
+                    (F.col(col_score) >= 920) &
+                    (F.col(col_score) < 940) &
+                    (F.col(col_saldo_promedio) >= 302.54),
+                    "C_7"
+                ).when(
+                    (F.col(col_score) >= 940) &
+                    (F.col(col_score) < 972) &
+                    (F.col(col_saldo_promedio) >= 302.54),
+                    "C_8"
+                ).when(
+                    (F.col(col_score) >= 972) &
+                    (F.col(col_saldo_promedio) >= 53.1),
+                    "C_9"
+                ).otherwise("Sin Perfil")
+            )
+        )
+
+        return df.withColumn(col_perfiles, perfiles_expr)
+
+    dfU3M = asignar_perfil_avgSaldoU3M(
+        df12D,
+        col_tipo_modelo = 'tipoModeloFA',
+        col_score = 'scoreBuroFA',
+        col_saldo_promedio = 'avgSaldoCuentasU3M',
+        col_perfiles = 'perfilesReglasU3M'
+    )
+
+    dfU6M = asignar_perfil_avgSaldoU6M(
+        dfU3M,
+        col_tipo_modelo = 'tipoModeloFA',
+        col_score = 'scoreBuroFA',
+        col_saldo_promedio = 'avgSaldoCuentasU6M',
+        col_perfiles = 'perfilesReglasU6M'
+    )
+
+    return dfU6M
